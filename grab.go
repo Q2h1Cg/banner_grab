@@ -70,7 +70,8 @@ func main() {
 	}
 }
 
-func grab(host string, port int, protocol string, bannerSize int, connectTimeout, sslTimeout, readWriteTimeout time.Duration) (*Service, error) {
+func grab(host string, port int, protocol string, bannerSize int, connectTimeout, sslTimeout,
+	readWriteTimeout time.Duration) (*Service, error) {
 	protocol = strings.ToLower(protocol)
 	if protocol != "tcp" && protocol != "udp" {
 		return nil, errors.New("no such protocol")
@@ -99,7 +100,9 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 			var certificates [][]byte
 			var httpsBanner []byte
 			if handshake.Source == "http" && isHTTPSendToHTTPS(banner) {
-				certificates, httpsBanner, _ = sendRecvTCPSSL(host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout)
+				certificates, httpsBanner, _ = sendRecvTCPSSL(
+					host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
+				)
 			}
 
 			if certificates != nil {
@@ -120,7 +123,9 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 	// ssl
 	var banner []byte
 	for _, handshake := range handshakes {
-		service.Certificates, banner, _ = sendRecvTCPSSL(host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout)
+		service.Certificates, banner, _ = sendRecvTCPSSL(
+			host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
+		)
 		if !service.SSL && service.Certificates != nil {
 			service.SSL = true
 		}
@@ -134,7 +139,8 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 	return service, nil
 }
 
-func sendRecvTCP(host string, port int, handshake []byte, bannerSize int, connectTimeout, readWriteTimeout time.Duration) ([]byte, error) {
+func sendRecvTCP(host string, port int, handshake []byte, bannerSize int, connectTimeout,
+	readWriteTimeout time.Duration) ([]byte, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), connectTimeout)
 	if err != nil {
 		return nil, err
@@ -144,7 +150,8 @@ func sendRecvTCP(host string, port int, handshake []byte, bannerSize int, connec
 	return sendRecv(conn, readWriteTimeout, handshake, bannerSize)
 }
 
-func sendRecvTCPSSL(host string, port int, handshake []byte, bannerSize int, connectTimeout, sslTimeout, readWriteTimeout time.Duration) ([][]byte, []byte, error) {
+func sendRecvTCPSSL(host string, port int, handshake []byte, bannerSize int, connectTimeout, sslTimeout,
+	readWriteTimeout time.Duration) ([][]byte, []byte, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), connectTimeout)
 	if err != nil {
 		return nil, nil, err
