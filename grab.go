@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -50,39 +52,79 @@ func init() {
 }
 
 func main() {
-	host := flag.String("ip", "127.0.0.1", "ip")
-	port := flag.Int("port", 80, "port")
-	protocol := flag.String("protocol", "tcp", "protocol")
+	threads := flag.Int("threads", 1024, "threads")
 	bannerSize := flag.Int("banner", 1024, "banner size")
 	connectTimeout := flag.Duration("connect", time.Second, "connect timeout")
 	sslTimeout := flag.Duration("ssl", time.Second, "ssl handshake timeout")
 	readWriteTimeout := flag.Duration("readWrite", time.Second, "read write timeout")
 	flag.Parse()
 
-	service, err := grab(*host, *port, *protocol, *bannerSize, *connectTimeout, *sslTimeout, *readWriteTimeout)
-	if err != nil {
-		log.Fatalf("error while grabbing: %v\n", err)
+	input := make(chan *Service, 1024)
+	output := make(chan *Service, 1024)
+	done := make(chan struct{}, *threads)
+
+	// input
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+
+		for scanner.Scan() {
+			data := scanner.Bytes()
+			var service Service
+			if err := json.Unmarshal(data, &service); err != nil {
+				log.Printf("error while unmarshalling data to Service: %v\n", err)
+				continue
+			}
+			input <- &service
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Fatalf("error while reading from stdin: %v\n", err)
+		}
+
+		close(input)
+	}()
+
+	// grab
+	for i := 0; i < *threads; i++ {
+		go func() {
+			for service := range input {
+				service, _ = grab(service, *bannerSize, *connectTimeout, *sslTimeout, *readWriteTimeout)
+				output <- service
+			}
+			done <- struct{}{}
+		}()
 	}
-	if data, err := json.Marshal(service); err != nil {
-		log.Fatalf("error while marshalling to json: %v\n", err)
-	} else {
+
+	// output
+	go func() {
+		for i := 0; i < *threads; i++ {
+			<-done
+		}
+		close(output)
+	}()
+
+	for service := range output {
+		data, err := json.Marshal(service)
+		if err != nil {
+			log.Printf("error while marshalling Service to json: %v\n", err)
+			continue
+		}
 		fmt.Println(string(data))
 	}
 }
 
-func grab(host string, port int, protocol string, bannerSize int, connectTimeout, sslTimeout,
+func grab(service *Service, bannerSize int, connectTimeout, sslTimeout,
 	readWriteTimeout time.Duration) (*Service, error) {
-	protocol = strings.ToLower(protocol)
-	if protocol != "tcp" && protocol != "udp" {
+	service.Protocol = strings.ToLower(service.Protocol)
+	if service.Protocol != "tcp" && service.Protocol != "udp" {
 		return nil, errors.New("no such protocol")
 	}
 
 	// TODO support udp protocol
-	if protocol == "udp" {
-		return &Service{IP: host, Port: port, Protocol: "udp", Banner: Banner{Banner: []byte{}}}, nil
+	if service.Protocol == "udp" {
+		return service, nil
 	}
 
-	service := &Service{IP: host, Port: port, Protocol: protocol}
 	defer func() {
 		if service.Certificates == nil {
 			service.Certificates = [][]byte{}
@@ -94,14 +136,14 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 
 	// raw
 	for _, handshake := range handshakes {
-		banner, _ := sendRecvTCP(host, port, handshake.Packet, bannerSize, connectTimeout, readWriteTimeout)
+		banner, _ := sendRecvTCP(service.IP, service.Port, handshake.Packet, bannerSize, connectTimeout, readWriteTimeout)
 		if banner != nil {
 			// http request sent to https
 			var certificates [][]byte
 			var httpsBanner []byte
 			if handshake.Source == "http" && isHTTPSendToHTTPS(banner) {
 				certificates, httpsBanner, _ = sendRecvTCPSSL(
-					host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
+					service.IP, service.Port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
 				)
 			}
 
@@ -111,10 +153,9 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 			}
 			service.Banner.Source = handshake.Source
 			if httpsBanner != nil {
-				service.Banner.Banner = httpsBanner
-			} else {
-				service.Banner.Banner = banner
+				banner = httpsBanner
 			}
+			service.Banner.Banner = banner
 
 			return service, nil
 		}
@@ -124,7 +165,7 @@ func grab(host string, port int, protocol string, bannerSize int, connectTimeout
 	var banner []byte
 	for _, handshake := range handshakes {
 		service.Certificates, banner, _ = sendRecvTCPSSL(
-			host, port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
+			service.IP, service.Port, handshake.Packet, bannerSize, connectTimeout, sslTimeout, readWriteTimeout,
 		)
 		if !service.SSL && service.Certificates != nil {
 			service.SSL = true
