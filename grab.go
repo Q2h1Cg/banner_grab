@@ -113,8 +113,7 @@ func main() {
 	}
 }
 
-func grab(service *Service, bannerSize int, connectTimeout, sslTimeout,
-	readWriteTimeout time.Duration) (*Service, error) {
+func grab(service *Service, bannerSize int, connectTimeout, sslTimeout, readWriteTimeout time.Duration) (*Service, error) {
 	service.Protocol = strings.ToLower(service.Protocol)
 	if service.Protocol != "tcp" && service.Protocol != "udp" {
 		return nil, errors.New("no such protocol")
@@ -180,8 +179,7 @@ func grab(service *Service, bannerSize int, connectTimeout, sslTimeout,
 	return service, nil
 }
 
-func sendRecvTCP(host string, port int, handshake []byte, bannerSize int, connectTimeout,
-	readWriteTimeout time.Duration) ([]byte, error) {
+func sendRecvTCP(host string, port int, handshake []byte, bannerSize int, connectTimeout, readWriteTimeout time.Duration) ([]byte, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), connectTimeout)
 	if err != nil {
 		return nil, err
